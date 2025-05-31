@@ -2,18 +2,15 @@
 export const config = {
   // Database Configuration
   mongodb: {
-    // MongoDB Atlas URI
-    atlasUri: 'mongodb+srv://ghem:ghem@ghem.eqxqd5j.mongodb.net/ghems?retryWrites=true&w=majority&appName=ghem',
-    // للاستخدام مع Docker Compose (backup)
-    dockerUri: 'mongodb://admin:mawasiem123@mongodb:27017/mawasiem_db?authSource=admin',
-    // للاستخدام المحلي (backup)
-    localUri: 'mongodb://admin:mawasiem123@localhost:27017/mawasiem_db?authSource=admin',
-    dbName: 'ghems',
+    // تم التحديث بواسطة المستخدم مباشرة
+    atlasUri: process.env.MONGODB_ATLAS_URI || 'mongodb+srv://ghem:ghem@ghem.eqxqd5j.mongodb.net/medicine?retryWrites=true&w=majority&appName=ghem',
+    dockerUri: process.env.MONGODB_DOCKER_URI || 'mongodb://mongodb:27017/medicine', // Changed to medicine
+    localUri: process.env.MONGODB_LOCAL_URI || 'mongodb://localhost:27017/medicine', // Changed to medicine
+    dbName: process.env.DB_NAME || 'medicine', // Ensure this is 'medicine'
     options: {
-      maxPoolSize: 10,
-      serverSelectionTimeoutMS: 5000,
-      socketTimeoutMS: 45000,
-    }
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    },
   },
 
   // Server Configuration
@@ -76,4 +73,4 @@ export const getMongoUri = () => {
   
   // الافتراضي هو MongoDB Atlas
   return config.mongodb.atlasUri;
-}; 
+};

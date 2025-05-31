@@ -27,16 +27,10 @@ const port = process.env.PORT || 3001;
 // CORS configuration for production
 const corsOptions = {
   origin: [
-    'http://localhost:5173',
-    'http://localhost:5174', 
-    'http://localhost:3000',
-    'https://ghemf.netlify.app',  // Old Netlify URL (keep for backup)
-    'https://ghemf.netlify.app/', // With trailing slash
-    // Custom domains - PRODUCTION READY 🚀
-    'https://ghem.store',         // Main domain
-    'https://www.ghem.store',     // With www
-    'http://ghem.store',          // HTTP version (for redirects)
-    'http://www.ghem.store',      // HTTP with www
+    'http://localhost:5173', // Development frontend
+    'http://localhost:5174', // Another local dev port if needed
+    'http://localhost:3000', // Common local dev port
+    'https://ote.netlify.app'     // Your new Netlify frontend URL
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -1981,4 +1975,4 @@ async function startServer() {
   });
 }
 
-startServer().catch(console.error); 
+startServer().catch(console.error);
