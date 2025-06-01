@@ -14,36 +14,7 @@ const specificationSchema = new mongoose.Schema({
   }
 }, { _id: false });
 
-// Schema for dynamic product options
-const productOptionSchema = new mongoose.Schema({
-  optionName: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  optionType: {
-    type: String,
-    required: true,
-    enum: ['select', 'text', 'number', 'radio']
-  },
-  required: {
-    type: Boolean,
-    default: false
-  },
-  options: [{
-    value: String,
-    label: String,
-    price: { type: Number, default: 0 }
-  }],
-  placeholder: String,
-  validation: {
-    minLength: Number,
-    maxLength: Number,
-    pattern: String
-  }
-}, { _id: false });
-
-// Main Product Schema
+// Main Product Schema - Simplified for Medical Company
 const productSchema = new mongoose.Schema({
   id: {
     type: Number,
@@ -84,17 +55,6 @@ const productSchema = new mongoose.Schema({
     ref: 'Category'
   },
   
-  // Product Type and Dynamic Fields
-  productType: {
-    type: String,
-    required: true,
-    enum: ['وشاح وكاب', 'جاكيت', 'عباية تخرج', 'أطفال', 'كاب فقط'],
-    default: 'وشاح وكاب'
-  },
-  
-  // Dynamic options based on product type
-  dynamicOptions: [productOptionSchema],
-  
   mainImage: {
     type: String,
     trim: true,
@@ -131,153 +91,21 @@ const productSchema = new mongoose.Schema({
     maxlength: [160, 'SEO description cannot be more than 160 characters']
   }
 }, {
-  timestamps: {
-    createdAt: 'createdAt',
-    updatedAt: 'updatedAt'
-  },
+  timestamps: true,
   toJSON: { virtuals: true },
   toObject: { virtuals: true }
 });
 
 // Indexes for better performance
-productSchema.index({ id: 1 });
 productSchema.index({ categoryId: 1 });
-productSchema.index({ productType: 1 });
-productSchema.index({ name: 'text', description: 'text' });
-productSchema.index({ price: 1 });
-productSchema.index({ stock: 1 });
 productSchema.index({ isActive: 1 });
 productSchema.index({ featured: 1 });
-productSchema.index({ createdAt: -1 });
+productSchema.index({ name: 'text', description: 'text' });
 
-// Virtual for category population
-productSchema.virtual('category', {
-  ref: 'Category',
-  localField: 'categoryId',
-  foreignField: 'id',
-  justOne: true
+// Virtual for image URLs
+productSchema.virtual('imageUrl').get(function() {
+  return this.mainImage ? `/images/${this.mainImage}` : null;
 });
-
-// Static method to get default options for each product type
-productSchema.statics.getDefaultOptionsForType = function(productType) {
-  const defaultOptions = {
-    'وشاح وكاب': [
-      {
-        optionName: 'nameOnSash',
-        optionType: 'text',
-        required: true,
-        placeholder: 'الاسم على الوشاح (ثنائي أو ثلاثي)',
-        validation: { minLength: 2, maxLength: 50 }
-      },
-      {
-        optionName: 'embroideryColor',
-        optionType: 'select',
-        required: true,
-        options: []
-      },
-      {
-        optionName: 'capFabric',
-        optionType: 'select',
-        required: true,
-        options: []
-      }
-    ],
-    'جاكيت': [
-      {
-        optionName: 'size',
-        optionType: 'select',
-        required: true,
-        options: [
-          { value: '48', label: '48' },
-          { value: '50', label: '50' },
-          { value: '52', label: '52' },
-          { value: '54', label: '54' },
-          { value: '56', label: '56' },
-          { value: '58', label: '58' },
-          { value: '60', label: '60' }
-        ]
-      }
-    ],
-    'عباية تخرج': [
-      {
-        optionName: 'size',
-        optionType: 'select',
-        required: true,
-        options: [
-          { value: '48', label: '48' },
-          { value: '50', label: '50' },
-          { value: '52', label: '52' },
-          { value: '54', label: '54' },
-          { value: '56', label: '56' },
-          { value: '58', label: '58' },
-          { value: '60', label: '60' }
-        ]
-      },
-      {
-        optionName: 'nameOnSash',
-        optionType: 'text',
-        required: false,
-        placeholder: 'الاسم على الوشاح (ثنائي أو ثلاثي)',
-        validation: { minLength: 2, maxLength: 50 }
-      },
-      {
-        optionName: 'embroideryColor',
-        optionType: 'select',
-        required: true,
-        options: []
-      }
-    ],
-    'أطفال': [
-      {
-        optionName: 'nameOnSash',
-        optionType: 'text',
-        required: false,
-        placeholder: 'الاسم على الوشاح (ثنائي أو ثلاثي)',
-        validation: { minLength: 2, maxLength: 50 }
-      },
-      {
-        optionName: 'embroideryColor',
-        optionType: 'select',
-        required: true,
-        options: []
-      },
-      {
-        optionName: 'size',
-        optionType: 'select',
-        required: true,
-        options: []
-      },
-      {
-        optionName: 'color',
-        optionType: 'select',
-        required: true,
-        options: []
-      }
-    ],
-    'كاب فقط': [
-      {
-        optionName: 'capColor',
-        optionType: 'select',
-        required: true,
-        options: []
-      },
-      {
-        optionName: 'embroideryColor',
-        optionType: 'select',
-        required: true,
-        options: []
-      },
-      {
-        optionName: 'dandoshColor',
-        optionType: 'select',
-        required: true,
-        options: []
-      }
-    ]
-  };
-  
-  return defaultOptions[productType] || [];
-};
 
 // Instance methods
 productSchema.methods.isInStock = function() {
@@ -297,77 +125,37 @@ productSchema.methods.increaseStock = function(quantity) {
   return this.save();
 };
 
-// Method to get calculated price based on selected options
-productSchema.methods.getCalculatedPrice = function(selectedOptions = {}) {
-  let totalPrice = this.price;
-  
-  this.dynamicOptions.forEach(option => {
-    const selectedValue = selectedOptions[option.optionName];
-    if (selectedValue && option.options) {
-      const selectedOption = option.options.find(opt => opt.value === selectedValue);
-      if (selectedOption && selectedOption.price) {
-        totalPrice += selectedOption.price;
-      }
-    }
-  });
-  
-  return totalPrice;
-};
-
-// Static methods
-productSchema.statics.findByCategory = function(categoryId) {
-  return this.find({ categoryId, isActive: true }).sort({ createdAt: -1 });
-};
-
-productSchema.statics.findByType = function(productType) {
-  return this.find({ productType, isActive: true }).sort({ createdAt: -1 });
-};
-
-productSchema.statics.findFeatured = function() {
-  return this.find({ featured: true, isActive: true }).sort({ createdAt: -1 });
-};
-
-productSchema.statics.searchByText = function(searchText) {
-  return this.find({
-    $text: { $search: searchText },
-    isActive: true
-  }).sort({ score: { $meta: 'textScore' } });
-};
-
-productSchema.statics.findLowStock = function(threshold = 5) {
-  return this.find({ 
-    stock: { $lte: threshold },
-    isActive: true 
-  }).sort({ stock: 1 });
+productSchema.methods.getDiscountPercentage = function() {
+  if (this.originalPrice && this.originalPrice > this.price) {
+    return Math.round(((this.originalPrice - this.price) / this.originalPrice) * 100);
+  }
+  return 0;
 };
 
 // Pre-save middleware
 productSchema.pre('save', function(next) {
-  // Auto-generate SEO fields if not provided
-  if (!this.seoTitle && this.name) {
-    this.seoTitle = this.name.substring(0, 60);
+  // Ensure originalPrice is higher than current price for discounts
+  if (this.originalPrice && this.originalPrice <= this.price) {
+    this.originalPrice = null;
   }
-  
-  if (!this.seoDescription && this.description) {
-    this.seoDescription = this.description.substring(0, 160);
-  }
-  
-  // Set default options if not provided
-  if (this.isNew && this.productType && (!this.dynamicOptions || this.dynamicOptions.length === 0)) {
-    this.dynamicOptions = this.constructor.getDefaultOptionsForType(this.productType);
-  }
-  
   next();
 });
 
-// Auto-generate unique ID for new products
-productSchema.pre('save', async function(next) {
-  if (this.isNew && !this.id) {
-    const lastProduct = await this.constructor.findOne().sort({ id: -1 });
-    this.id = lastProduct ? lastProduct.id + 1 : 1;
-  }
-  next();
-});
+// Static methods
+productSchema.statics.findByCategory = function(categoryId) {
+  return this.find({ categoryId, isActive: true });
+};
+
+productSchema.statics.findFeatured = function() {
+  return this.find({ featured: true, isActive: true });
+};
+
+productSchema.statics.searchProducts = function(query) {
+  return this.find({
+    $text: { $search: query },
+    isActive: true
+  });
+};
 
 const Product = mongoose.model('Product', productSchema);
 

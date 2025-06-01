@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 
+// Professional Category Schema for Medical Company
 const categorySchema = new mongoose.Schema({
   id: {
     type: Number,
@@ -10,102 +11,97 @@ const categorySchema = new mongoose.Schema({
     type: String,
     required: [true, 'Category name is required'],
     trim: true,
-    maxlength: [100, 'Category name cannot be more than 100 characters']
+    maxlength: [100, 'Category name cannot exceed 100 characters']
   },
   description: {
     type: String,
+    required: [true, 'Category description is required'],
     trim: true,
-    maxlength: [500, 'Category description cannot be more than 500 characters']
+    maxlength: [500, 'Category description cannot exceed 500 characters']
   },
   image: {
     type: String,
-    trim: true,
-    default: ''
+    required: [true, 'Category image is required'],
+    trim: true
   },
   isActive: {
     type: Boolean,
     default: true
   },
-  parentId: {
-    type: Number,
-    ref: 'Category',
-    default: null
-  },
-  order: {
+  displayOrder: {
     type: Number,
     default: 0
   },
+  // SEO fields
   seoTitle: {
     type: String,
     trim: true,
-    maxlength: [60, 'SEO title cannot be more than 60 characters']
+    maxlength: [60, 'SEO title cannot exceed 60 characters']
   },
   seoDescription: {
     type: String,
     trim: true,
-    maxlength: [160, 'SEO description cannot be more than 160 characters']
+    maxlength: [160, 'SEO description cannot exceed 160 characters']
+  },
+  slug: {
+    type: String,
+    trim: true,
+    lowercase: true
   }
 }, {
-  timestamps: {
-    createdAt: 'createdAt',
-    updatedAt: 'updatedAt'
-  },
+  timestamps: true,
   toJSON: { virtuals: true },
   toObject: { virtuals: true }
 });
 
-// Indexes
-categorySchema.index({ id: 1 });
-categorySchema.index({ name: 1 });
+// Indexes for better performance
 categorySchema.index({ isActive: 1 });
-categorySchema.index({ parentId: 1 });
-categorySchema.index({ order: 1 });
+categorySchema.index({ displayOrder: 1 });
+categorySchema.index({ slug: 1 });
+categorySchema.index({ name: 'text', description: 'text' });
 
-// Virtual for products count
+// Virtual for image URL
+categorySchema.virtual('imageUrl').get(function() {
+  return this.image ? `/images/${this.image}` : null;
+});
+
+// Virtual to get products count
 categorySchema.virtual('productsCount', {
   ref: 'Product',
   localField: 'id',
   foreignField: 'categoryId',
-  count: true,
-  match: { isActive: true }
+  count: true
 });
 
-// Virtual for parent category
-categorySchema.virtual('parent', {
-  ref: 'Category',
-  localField: 'parentId',
-  foreignField: 'id',
-  justOne: true
-});
-
-// Virtual for subcategories
-categorySchema.virtual('subcategories', {
-  ref: 'Category',
-  localField: 'id',
-  foreignField: 'parentId'
-});
+// Instance methods
+categorySchema.methods.getActiveProducts = function() {
+  return mongoose.model('Product').find({ 
+    categoryId: this.id, 
+    isActive: true 
+  });
+};
 
 // Static methods
 categorySchema.statics.findActive = function() {
-  return this.find({ isActive: true }).sort({ order: 1, name: 1 });
+  return this.find({ isActive: true }).sort({ displayOrder: 1, name: 1 });
 };
 
-categorySchema.statics.findMainCategories = function() {
-  return this.find({ 
-    isActive: true, 
-    $or: [{ parentId: null }, { parentId: { $exists: false } }]
-  }).sort({ order: 1, name: 1 });
+categorySchema.statics.findBySlug = function(slug) {
+  return this.findOne({ slug, isActive: true });
 };
 
-categorySchema.statics.findSubcategories = function(parentId) {
-  return this.find({ parentId, isActive: true }).sort({ order: 1, name: 1 });
-};
-
-// Auto-generate unique ID for new categories
-categorySchema.pre('save', async function(next) {
-  if (this.isNew && !this.id) {
-    const lastCategory = await this.constructor.findOne().sort({ id: -1 });
-    this.id = lastCategory ? lastCategory.id + 1 : 1;
+// Pre-save middleware
+categorySchema.pre('save', function(next) {
+  // Auto-generate slug if not provided
+  if (!this.slug && this.name) {
+    this.slug = this.name
+      .toLowerCase()
+      .replace(/[أإآ]/g, 'ا')
+      .replace(/[ة]/g, 'ه')
+      .replace(/[ى]/g, 'ي')
+      .replace(/[^\u0600-\u06FFa-zA-Z0-9]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '');
   }
   
   // Auto-generate SEO fields if not provided
@@ -117,6 +113,15 @@ categorySchema.pre('save', async function(next) {
     this.seoDescription = this.description.substring(0, 160);
   }
   
+  next();
+});
+
+// Auto-generate unique ID for new categories
+categorySchema.pre('save', async function(next) {
+  if (this.isNew && !this.id) {
+    const lastCategory = await this.constructor.findOne().sort({ id: -1 });
+    this.id = lastCategory ? lastCategory.id + 1 : 1;
+  }
   next();
 });
 
