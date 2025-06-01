@@ -30,7 +30,9 @@ const corsOptions = {
     'http://localhost:5173', // Development frontend
     'http://localhost:5174', // Another local dev port if needed
     'http://localhost:3000', // Common local dev port
-    'https://ote.netlify.app'     // Your new Netlify frontend URL
+    'https://ote.netlify.app',
+    'http://ote.netlify.app',
+    'ote.netlify.app'     // Your new Netlify frontend URL
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
