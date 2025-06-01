@@ -1,8 +1,10 @@
 import mongoose from 'mongoose';
+import bcrypt from 'bcryptjs';
 
 const customerSchema = new mongoose.Schema({
   id: { type: Number, unique: true },
   email: { type: String, required: true, unique: true, lowercase: true },
+  password: { type: String, required: true }, // كلمة المرور المُشفرة
   phone: { type: String, default: '' },
   name: { type: String, required: true },
   city: { type: String, default: '' },
@@ -19,10 +21,11 @@ const customerSchema = new mongoose.Schema({
     default: 'active' 
   },
   
-  // OTP بسيط للتحقق فقط
-  otp: {
-    code: { type: String },
-    expiresAt: { type: Date }
+  // أدوار المستخدم
+  role: {
+    type: String,
+    enum: ['customer', 'admin'],
+    default: 'customer'
   },
   
   createdAt: { type: Date, default: Date.now }
@@ -34,35 +37,30 @@ customerSchema.pre('save', async function(next) {
     const lastCustomer = await this.constructor.findOne().sort({ id: -1 });
     this.id = lastCustomer ? lastCustomer.id + 1 : 1;
   }
+  
+  // تشفير كلمة المرور قبل الحفظ
+  if (this.isModified('password')) {
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
+  }
+  
   next();
 });
 
-// إنشاء OTP بسيط (4 أرقام)
-customerSchema.methods.generateOTP = function() {
-  const otp = Math.floor(1000 + Math.random() * 9000).toString(); // 4 أرقام بدلاً من 6
-  const expiresAt = new Date();
-  expiresAt.setMinutes(expiresAt.getMinutes() + 10);
-  
-  this.otp = { code: otp, expiresAt };
-  return otp;
+// مقارنة كلمة المرور
+customerSchema.methods.comparePassword = async function(candidatePassword) {
+  try {
+    return await bcrypt.compare(candidatePassword, this.password);
+  } catch (error) {
+    console.error('Password comparison error:', error);
+    return false;
+  }
 };
 
-// التحقق من OTP بسيط
-customerSchema.methods.verifyOTP = function(inputOTP) {
-  if (!this.otp || !this.otp.code) {
-    return { valid: false, message: 'لم يتم إرسال كود التحقق' };
-  }
-  
-  if (new Date() > this.otp.expiresAt) {
-    return { valid: false, message: 'انتهت صلاحية كود التحقق' };
-  }
-  
-  if (this.otp.code !== inputOTP) {
-    return { valid: false, message: 'كود التحقق غير صحيح' };
-  }
-  
-  this.otp = undefined;
-  return { valid: true, message: 'تم التحقق بنجاح' };
+// تحديث كلمة المرور
+customerSchema.methods.updatePassword = async function(newPassword) {
+  this.password = newPassword;
+  await this.save();
 };
 
 const Customer = mongoose.model('Customer', customerSchema);
