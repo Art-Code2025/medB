@@ -1939,6 +1939,97 @@ app.put('/api/user/:userId/cart/update-options', async (req, res) => {
   }
 });
 
+// Cart Migration - Move guest cart to authenticated user
+app.post('/api/migrate-cart', async (req, res) => {
+  try {
+    const { userId } = req.body;
+    
+    if (!userId || userId === 'guest') {
+      return res.status(400).json({ message: 'Valid user ID is required' });
+    }
+
+    console.log(`🔄 [Cart Migration] Starting cart migration for user: ${userId}`);
+    
+    // Get guest cart items
+    const guestCartItems = await Cart.find({ userId: 'guest' });
+    console.log(`📦 [Cart Migration] Found ${guestCartItems.length} guest cart items`);
+    
+    if (guestCartItems.length === 0) {
+      return res.json({ 
+        message: 'No guest cart items to migrate',
+        migratedCount: 0 
+      });
+    }
+
+    let migratedCount = 0;
+    let mergedCount = 0;
+
+    for (const guestItem of guestCartItems) {
+      try {
+        // Check if user already has this product with same options
+        const existingUserItem = await Cart.findOne({
+          userId: userId,
+          productId: guestItem.productId,
+          selectedOptions: guestItem.selectedOptions || {}
+        });
+
+        if (existingUserItem) {
+          // Merge quantities if item exists
+          existingUserItem.quantity += guestItem.quantity;
+          
+          // Update attachments if guest has newer ones
+          if (guestItem.attachments && (guestItem.attachments.text || guestItem.attachments.images?.length > 0)) {
+            existingUserItem.attachments = guestItem.attachments;
+          }
+          
+          await existingUserItem.save();
+          mergedCount++;
+          console.log(`🔄 [Cart Migration] Merged item ${guestItem.productId} with existing user item`);
+        } else {
+          // Create new item for user
+          const newUserItem = new Cart({
+            userId: userId,
+            productId: guestItem.productId,
+            productName: guestItem.productName,
+            price: guestItem.price,
+            quantity: guestItem.quantity,
+            image: guestItem.image,
+            selectedOptions: guestItem.selectedOptions || {},
+            optionsPricing: guestItem.optionsPricing || {},
+            attachments: guestItem.attachments || {}
+          });
+          
+          await newUserItem.save();
+          migratedCount++;
+          console.log(`✅ [Cart Migration] Migrated item ${guestItem.productId} to user cart`);
+        }
+
+        // Delete the guest item
+        await Cart.deleteOne({ _id: guestItem._id });
+        
+      } catch (itemError) {
+        console.error(`❌ [Cart Migration] Error migrating item ${guestItem.productId}:`, itemError);
+      }
+    }
+
+    console.log(`✅ [Cart Migration] Completed: ${migratedCount} new items, ${mergedCount} merged items`);
+    
+    res.json({
+      message: 'Cart migration completed successfully',
+      migratedCount: migratedCount,
+      mergedCount: mergedCount,
+      totalProcessed: migratedCount + mergedCount
+    });
+
+  } catch (error) {
+    console.error('❌ [Cart Migration] Error:', error);
+    res.status(500).json({ 
+      message: 'Failed to migrate cart',
+      error: error.message 
+    });
+  }
+});
+
 // ======================
 // ORIGINAL APIs (تم الاحتفاظ بها للتوافق مع الداش بورد)
 // ======================
