@@ -3,10 +3,10 @@ export const config = {
   // Database Configuration
   mongodb: {
     // تم التحديث بواسطة المستخدم مباشرة
-    atlasUri: process.env.MONGODB_ATLAS_URI || 'mongodb+srv://ghem:ghem@ghem.eqxqd5j.mongodb.net/medicine?retryWrites=true&w=majority&appName=ghem',
-    dockerUri: process.env.MONGODB_DOCKER_URI || 'mongodb://mongodb:27017/medicine', // Changed to medicine
-    localUri: process.env.MONGODB_LOCAL_URI || 'mongodb://localhost:27017/medicine', // Changed to medicine
-    dbName: process.env.DB_NAME || 'medicine', // Ensure this is 'medicine'
+    atlasUri: process.env.MONGODB_ATLAS_URI || 'mongodb+srv://ghem:ghem@ghem.eqxqd5j.mongodb.net/perf?retryWrites=true&w=majority&appName=ghem',
+    dockerUri: process.env.MONGODB_DOCKER_URI || 'mongodb://mongodb:27017/perf', // Changed to perf
+    localUri: process.env.MONGODB_LOCAL_URI || 'mongodb://localhost:27017/perf', // Changed to perf
+    dbName: process.env.DB_NAME || 'perf', // Ensure this is 'perf'
     options: {
       useNewUrlParser: true,
       useUnifiedTopology: true,

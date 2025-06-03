@@ -1794,7 +1794,7 @@ app.post('/api/upload-attachments', uploadFiles, async (req, res) => {
 // Checkout endpoint
 app.post('/api/checkout', async (req, res) => {
   try {
-    const { items, customerInfo, paymentMethod, total, subtotal, deliveryFee, couponDiscount, appliedCoupon, paymentId, paymentStatus, userId } = req.body;
+    const { items, customerInfo, paymentMethod, total, subtotal, deliveryFee, couponDiscount, appliedCoupon, paymentId, paymentStatus, userId, isGuestOrder } = req.body;
     
     console.log('Creating order with data:', {
       customerInfo,
@@ -1805,7 +1805,8 @@ app.post('/api/checkout', async (req, res) => {
       couponDiscount,
       paymentMethod,
       paymentStatus,
-      userId
+      userId,
+      isGuestOrder
     });
     
     // تحضير عناصر الطلب - البيانات جاهزة من الفرونت إند
@@ -1848,7 +1849,9 @@ app.post('/api/checkout', async (req, res) => {
       couponDiscount: orderCouponDiscount,
       paymentMethod: paymentMethod || 'cod',
       paymentStatus: paymentStatus || 'pending',
-      notes: customerInfo.notes || ''
+      notes: customerInfo.notes || '',
+      userId: userId || 'guest', // Support both guest and authenticated users
+      isGuestOrder: isGuestOrder !== undefined ? isGuestOrder : (userId === 'guest' || !userId) // Determine if it's a guest order
     });
 
     // إضافة معرف الدفع إذا كان متوفراً
@@ -1858,7 +1861,13 @@ app.post('/api/checkout', async (req, res) => {
 
     await order.save();
     
-    console.log('Order created successfully:', order.id);
+    console.log('Order created successfully:', {
+      orderId: order.id,
+      customerName: order.customerName,
+      isGuestOrder: order.isGuestOrder,
+      userId: order.userId
+    });
+    
     res.status(201).json({ 
       message: 'تم إرسال طلبك بنجاح!',
       orderId: order.id,
@@ -1868,7 +1877,9 @@ app.post('/api/checkout', async (req, res) => {
         total: order.total,
         status: order.status,
         paymentStatus: order.paymentStatus,
-        orderDate: order.orderDate
+        orderDate: order.orderDate,
+        isGuestOrder: order.isGuestOrder,
+        userId: order.userId
       }
     });
   } catch (error) {

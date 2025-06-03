@@ -23,6 +23,10 @@ const orderSchema = new mongoose.Schema({
   customerEmail: { type: String, required: true },
   customerPhone: { type: String, default: '' },
   
+  // معرف المستخدم (للمستخدمين المسجلين أو 'guest' للضيوف)
+  userId: { type: String, default: 'guest' },
+  isGuestOrder: { type: Boolean, default: true },
+  
   // معلومات التوصيل
   address: { type: String, required: true },
   city: { type: String, required: true },
@@ -143,6 +147,9 @@ orderSchema.index({ customerEmail: 1 });
 orderSchema.index({ customerPhone: 1 });
 orderSchema.index({ status: 1 });
 orderSchema.index({ orderDate: -1 });
+orderSchema.index({ userId: 1 });
+orderSchema.index({ isGuestOrder: 1 });
+orderSchema.index({ userId: 1, orderDate: -1 }); // Compound index for user orders sorted by date
 
 const Order = mongoose.model('Order', orderSchema);
 
