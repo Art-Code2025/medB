@@ -939,30 +939,101 @@ app.get('/api/cart', async (req, res) => {
 
 app.post('/api/cart', async (req, res) => {
   try {
-    const { userId = 'guest', productId, productName, price, quantity = 1, image = '' } = req.body;
+    const { userId = 'guest', productId, productName, price, quantity = 1, image = '', selectedOptions = {}, optionsPricing = {}, attachments = {} } = req.body;
     
-    // Check if item already exists
-    const existingItem = await Cart.findOne({ userId, productId });
+    console.log('🛒 ADD TO GUEST CART REQUEST:', {
+      userId,
+      productId,
+      productIdType: typeof productId,
+      quantity,
+      selectedOptions,
+      requestBody: req.body
+    });
+    
+    // التحقق من المنتج بطرق متعددة
+    let product = null;
+    
+    // جرب البحث بـ id أولاً
+    if (Number.isInteger(productId) || !isNaN(Number(productId))) {
+      product = await Product.findOne({ id: parseInt(productId) });
+      console.log('🔍 Guest cart - Product search by ID:', { productId: parseInt(productId), found: !!product });
+    }
+    
+    // إذا مالقاهوش، جرب البحث بـ _id كـ fallback
+    if (!product) {
+      try {
+        product = await Product.findById(productId);
+        console.log('🔍 Guest cart - Product search by _id:', { productId, found: !!product });
+      } catch (error) {
+        console.log('⚠️ Guest cart - Invalid ObjectId format:', productId);
+      }
+    }
+    
+    // إذا لسه مالقاهوش، جرب البحث في كل المنتجات
+    if (!product) {
+      const allProducts = await Product.find({});
+      console.log('📦 Guest cart - All products in database:', allProducts.map(p => ({ id: p.id, _id: p._id, name: p.name })));
+      
+      // جرب تطابق النصوص
+      product = allProducts.find(p => p.id === productId || p._id.toString() === productId.toString());
+      console.log('🔍 Guest cart - Product search in all products:', { found: !!product });
+    }
+    
+    if (!product) {
+      console.error('❌ Guest cart - Product not found after all search attempts:', { productId });
+      return res.status(404).json({ 
+        message: 'المنتج غير موجود',
+        debug: {
+          searchedId: productId,
+          searchedIdType: typeof productId,
+          searchedAsNumber: parseInt(productId),
+          isNaN: isNaN(Number(productId))
+        }
+      });
+    }
+    
+    console.log('✅ Guest cart - Product found:', {
+      productId: product.id,
+      productName: product.name,
+      productDbId: product._id
+    });
+    
+    // Check if item already exists with same options
+    const existingItem = await Cart.findOne({ 
+      userId, 
+      productId: product.id,
+      selectedOptions: selectedOptions 
+    });
+    
     if (existingItem) {
       existingItem.quantity += quantity;
+      // تحديث المرفقات إذا كانت موجودة
+      if (attachments && (attachments.text || attachments.images?.length > 0)) {
+        existingItem.attachments = attachments;
+      }
       await existingItem.save();
+      console.log('✅ Guest cart - Updated existing cart item:', existingItem);
       return res.json(existingItem);
     }
 
     const cartItem = new Cart({
       userId,
-      productId,
-      productName,
-      price,
+      productId: product.id,
+      productName: product.name,
+      price: product.price,
       quantity,
-      image
+      image: product.mainImage,
+      selectedOptions: selectedOptions || {},
+      optionsPricing: optionsPricing || {},
+      attachments: attachments || {}
     });
 
     await cartItem.save();
+    console.log('✅ Guest cart - Created new cart item:', cartItem);
     res.status(201).json(cartItem);
   } catch (error) {
-    console.error('Error in POST /api/cart:', error);
-    res.status(500).json({ message: 'Failed to add to cart' });
+    console.error('❌ Error in POST /api/cart:', error);
+    res.status(500).json({ message: 'Failed to add to cart', error: error.message });
   }
 });
 
@@ -1467,16 +1538,67 @@ app.post('/api/user/:userId/cart', async (req, res) => {
     const userId = req.params.userId;
     const { productId, quantity = 1, selectedOptions = {}, optionsPricing = {}, attachments = {} } = req.body;
     
-    // الحصول على بيانات المنتج
-    const product = await Product.findOne({ id: productId });
-    if (!product) {
-      return res.status(404).json({ message: 'المنتج غير موجود' });
+    console.log('🛒 ADD TO CART REQUEST:', {
+      userId,
+      productId,
+      productIdType: typeof productId,
+      quantity,
+      selectedOptions,
+      requestBody: req.body
+    });
+    
+    // التحقق من المنتج بطرق متعددة
+    let product = null;
+    
+    // جرب البحث بـ id أولاً
+    if (Number.isInteger(productId) || !isNaN(Number(productId))) {
+      product = await Product.findOne({ id: parseInt(productId) });
+      console.log('🔍 Product search by ID:', { productId: parseInt(productId), found: !!product });
     }
+    
+    // إذا مالقاهوش، جرب البحث بـ _id كـ fallback
+    if (!product) {
+      try {
+        product = await Product.findById(productId);
+        console.log('🔍 Product search by _id:', { productId, found: !!product });
+      } catch (error) {
+        console.log('⚠️ Invalid ObjectId format:', productId);
+      }
+    }
+    
+    // إذا لسه مالقاهوش، جرب البحث في كل المنتجات
+    if (!product) {
+      const allProducts = await Product.find({});
+      console.log('📦 All products in database:', allProducts.map(p => ({ id: p.id, _id: p._id, name: p.name })));
+      
+      // جرب تطابق النصوص
+      product = allProducts.find(p => p.id === productId || p._id.toString() === productId.toString());
+      console.log('🔍 Product search in all products:', { found: !!product });
+    }
+    
+    if (!product) {
+      console.error('❌ Product not found after all search attempts:', { productId });
+      return res.status(404).json({ 
+        message: 'المنتج غير موجود',
+        debug: {
+          searchedId: productId,
+          searchedIdType: typeof productId,
+          searchedAsNumber: parseInt(productId),
+          isNaN: isNaN(Number(productId))
+        }
+      });
+    }
+    
+    console.log('✅ Product found:', {
+      productId: product.id,
+      productName: product.name,
+      productDbId: product._id
+    });
     
     // التحقق من وجود العنصر في السلة مع نفس الخيارات
     const existingItem = await Cart.findOne({ 
       userId, 
-      productId,
+      productId: product.id, // استخدم product.id المؤكد
       selectedOptions: selectedOptions 
     });
     
@@ -1487,12 +1609,13 @@ app.post('/api/user/:userId/cart', async (req, res) => {
         existingItem.attachments = attachments;
       }
       await existingItem.save();
+      console.log('✅ Updated existing cart item:', existingItem);
       return res.json(existingItem);
     }
 
     const cartItem = new Cart({
       userId,
-      productId,
+      productId: product.id, // استخدم product.id المؤكد
       productName: product.name,
       price: product.price,
       quantity,
@@ -1503,10 +1626,11 @@ app.post('/api/user/:userId/cart', async (req, res) => {
     });
 
     await cartItem.save();
+    console.log('✅ Created new cart item:', cartItem);
     res.status(201).json(cartItem);
   } catch (error) {
-    console.error('Error in POST /api/user/:userId/cart:', error);
-    res.status(500).json({ message: 'Failed to add to cart' });
+    console.error('❌ Error in POST /api/user/:userId/cart:', error);
+    res.status(500).json({ message: 'Failed to add to cart', error: error.message });
   }
 });
 
