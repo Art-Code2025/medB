@@ -18,7 +18,6 @@ const specificationSchema = new mongoose.Schema({
 const productSchema = new mongoose.Schema({
   id: {
     type: Number,
-    required: true,
     unique: true
   },
   name: {
@@ -137,6 +136,15 @@ productSchema.pre('save', function(next) {
   // Ensure originalPrice is higher than current price for discounts
   if (this.originalPrice && this.originalPrice <= this.price) {
     this.originalPrice = null;
+  }
+  next();
+});
+
+// Auto-generate unique ID for new products
+productSchema.pre('save', async function(next) {
+  if (this.isNew && !this.id) {
+    const lastProduct = await this.constructor.findOne().sort({ id: -1 });
+    this.id = lastProduct ? lastProduct.id + 1 : 1;
   }
   next();
 });

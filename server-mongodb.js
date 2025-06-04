@@ -1,11 +1,9 @@
 import express from 'express';
 import cors from 'cors';
 import mongoose from 'mongoose';
-import multer from 'multer';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { config, getMongoUri } from './config.js';
-import fs from 'fs';
 
 // Import Models
 import Coupon from './models/Coupon.js';
@@ -14,6 +12,8 @@ import Cart from './models/Cart.js';
 import Wishlist from './models/Wishlist.js';
 import Order from './models/Order.js';
 import Review from './models/Review.js';
+import Category from './models/Category.js';
+import Product from './models/Product.js';
 
 // Import Email Service
 import { sendOTPEmail, sendWelcomeEmail } from './services/emailService.js';
@@ -41,177 +41,36 @@ const corsOptions = {
   optionsSuccessStatus: 200
 };
 
-// إعدادات Multer لرفع الصور
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const dir = path.join(__dirname, 'public/images/');
-    // التأكد من وجود المجلد
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    console.log(`📁 [Upload] Saving file to: ${dir}`);
-    cb(null, dir);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const filename = uniqueSuffix + path.extname(file.originalname);
-    console.log(`📸 [Upload] Generated filename: ${filename}`);
-    cb(null, filename);
-  }
-});
-
-// إعداد أساسي يتعامل مع أي نوع من الحقول
-const upload = multer({
-  storage,
-  limits: {
-    fileSize: 5 * 1024 * 1024,
-    files: 20
-  },
-  fileFilter: (req, file, cb) => {
-    console.log(`🔍 [Upload] Checking file: ${file.originalname}, type: ${file.mimetype}`);
-    if (file.mimetype.startsWith('image/')) {
-      cb(null, true);
-    } else {
-      cb(new Error('فقط ملفات الصور مسموحة!'), false);
-    }
-  }
-});
-
-// Middleware للتعامل مع جميع أنواع الملفات مع تسجيل العمليات
-const uploadFiles = (req, res, next) => {
-  upload.any()(req, res, (err) => {
-    if (err) {
-      console.error('❌ [Upload] Error during file upload:', err);
-      return next(err);
-    }
-    
-    // تسجيل الملفات المرفوعة
-    if (req.files && req.files.length > 0) {
-      console.log(`✅ [Upload] Successfully uploaded ${req.files.length} files:`);
-      req.files.forEach(file => {
-        const filePath = path.join(file.destination, file.filename);
-        console.log(`  - ${file.originalname} → ${file.filename} (${file.size} bytes)`);
-        console.log(`  - Full path: ${filePath}`);
-        
-        // التحقق من حفظ الملف
-        fs.access(filePath, fs.constants.F_OK, (err) => {
-          if (err) {
-            console.error(`❌ [Upload] File not found after upload: ${filePath}`);
-          } else {
-            console.log(`✅ [Upload] File confirmed saved: ${filePath}`);
-          }
-        });
-      });
-    } else {
-      console.log('ℹ️ [Upload] No files received');
-    }
-    
-    next();
-  });
-};
-
-// معالج أخطاء Multer
-const handleMulterError = (err, req, res, next) => {
-  if (err instanceof multer.MulterError) {
-    if (err.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({ message: 'حجم الملف كبير جداً (الحد الأقصى 5MB)' });
-    }
-    if (err.code === 'LIMIT_FILE_COUNT') {
-      return res.status(400).json({ message: 'عدد الملفات كبير جداً' });
-    }
-    if (err.code === 'LIMIT_UNEXPECTED_FILE') {
-      return res.status(400).json({ message: 'نوع ملف غير متوقع' });
-    }
-    return res.status(400).json({ message: 'خطأ في رفع الملف: ' + err.message });
-  }
-  if (err) {
-    return res.status(400).json({ message: err.message });
-  }
-  next();
-};
-
 // Middleware
 app.use(cors(corsOptions));
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-app.use('/images', express.static(path.join(__dirname, 'public/images')));
-app.use(handleMulterError);
+app.use(express.json({ limit: '50mb' })); // زيادة الحد الأقصى لدعم base64 images
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// MongoDB Schemas
-const categorySchema = new mongoose.Schema({
-  id: { type: Number, unique: true },
-  name: { type: String, required: true },
-  description: String,
-  image: String,
-  isActive: { type: Boolean, default: true },
-  createdAt: { type: Date, default: Date.now }
-});
+// دالة للتحقق من صحة base64 image
+function isValidBase64Image(base64String) {
+  if (!base64String || typeof base64String !== 'string') {
+    return false;
+  }
+  
+  const base64Regex = /^data:image\/(jpeg|jpg|png|gif|webp|avif);base64,/;
+  return base64Regex.test(base64String);
+}
 
-const productSchema = new mongoose.Schema({
-  id: { type: Number, unique: true },
-  name: { type: String, required: true },
-  description: String,
-  price: { type: Number, required: true },
-  originalPrice: { type: Number, default: null },
-  stock: { type: Number, default: 0 },
-  categoryId: { type: Number, required: true },
-  
-  // Product Type and Dynamic Fields
-  productType: {
-    type: String,
-    required: true,
-    enum: ['وشاح وكاب', 'جاكيت', 'عباية تخرج', 'مريول مدرسي', 'كاب فقط'],
-    default: 'وشاح وكاب'
-  },
-  
-  // Dynamic options based on product type
-  dynamicOptions: [{
-    optionName: String,
-    optionType: { type: String, enum: ['select', 'text', 'number', 'radio'] },
-    required: { type: Boolean, default: false },
-    options: [{
-      value: String,
-      label: String,
-      price: { type: Number, default: 0 }
-    }],
-    placeholder: String,
-    validation: {
-      minLength: Number,
-      maxLength: Number,
-      pattern: String
+// دالة لضغط وتحسين الصور base64
+function optimizeBase64Image(base64String) {
+  try {
+    // التحقق من أن الصورة صحيحة
+    if (!isValidBase64Image(base64String)) {
+      throw new Error('Invalid base64 image format');
     }
-  }],
-  
-  mainImage: String,
-  detailedImages: [String],
-  sizeGuideImage: String,
-  specifications: [{
-    name: String,
-    value: String
-  }],
-  isActive: { type: Boolean, default: true },
-  createdAt: { type: Date, default: Date.now }
-});
-
-// Auto-increment ID for new documents
-categorySchema.pre('save', async function(next) {
-  if (this.isNew && !this.id) {
-    const lastCategory = await this.constructor.findOne().sort({ id: -1 });
-    this.id = lastCategory ? lastCategory.id + 1 : 1;
+    
+    // يمكن إضافة منطق ضغط هنا إذا لزم الأمر
+    return base64String;
+  } catch (error) {
+    console.error('Error optimizing base64 image:', error);
+    return null;
   }
-  next();
-});
-
-productSchema.pre('save', async function(next) {
-  if (this.isNew && !this.id) {
-    const lastProduct = await this.constructor.findOne().sort({ id: -1 });
-    this.id = lastProduct ? lastProduct.id + 1 : 1;
-  }
-  next();
-});
-
-const Category = mongoose.model('Category', categorySchema);
-const Product = mongoose.model('Product', productSchema);
+}
 
 // Connect to MongoDB
 async function connectDB() {
@@ -250,22 +109,29 @@ app.get('/api/categories/:id', async (req, res) => {
   }
 });
 
-app.post('/api/categories', uploadFiles, async (req, res) => {
+app.post('/api/categories', async (req, res) => {
   try {
     console.log('Creating category with data:', req.body);
-    console.log('Files received:', req.files);
     
-    const { name, description } = req.body;
-    const imageFile = req.files?.find(f => f.fieldname === 'mainImage');
+    const { name, description, mainImage } = req.body;
+    
+    // التحقق من صحة الصورة إذا كانت موجودة
+    let optimizedImage = '';
+    if (mainImage && isValidBase64Image(mainImage)) {
+      optimizedImage = optimizeBase64Image(mainImage);
+      if (!optimizedImage) {
+        return res.status(400).json({ message: 'صورة غير صحيحة' });
+      }
+    }
     
     const category = new Category({
       name,
       description: description || '',
-      image: imageFile ? `/images/${imageFile.filename}` : ''
+      image: optimizedImage
     });
 
     await category.save();
-    console.log('Category created successfully:', category);
+    console.log('Category created successfully:', category.name);
     res.status(201).json(category);
   } catch (error) {
     console.error('Error in POST /api/categories:', error);
@@ -273,18 +139,25 @@ app.post('/api/categories', uploadFiles, async (req, res) => {
   }
 });
 
-app.put('/api/categories/:id', uploadFiles, async (req, res) => {
+app.put('/api/categories/:id', async (req, res) => {
   try {
-    const { name, description } = req.body;
-    const imageFile = req.files?.find(f => f.fieldname === 'mainImage');
+    const { name, description, mainImage } = req.body;
 
     const updateData = {
       name,
       description: description || ''
     };
 
-    if (imageFile) {
-      updateData.image = `/images/${imageFile.filename}`;
+    // التحقق من صحة الصورة إذا كانت موجودة
+    if (mainImage) {
+      if (isValidBase64Image(mainImage)) {
+        const optimizedImage = optimizeBase64Image(mainImage);
+        if (optimizedImage) {
+          updateData.image = optimizedImage;
+        }
+      } else {
+        return res.status(400).json({ message: 'صورة غير صحيحة' });
+      }
     }
 
     const category = await Category.findOneAndUpdate(
@@ -372,14 +245,23 @@ app.get('/api/products/category/:categoryId', async (req, res) => {
   }
 });
 
-app.post('/api/products', uploadFiles, async (req, res) => {
+app.post('/api/products', async (req, res) => {
   try {
-    console.log('Creating product with data:', req.body);
-    console.log('Files received:', req.files);
+    console.log('Creating product with data - name:', req.body.name);
     
-    const { name, description, price, originalPrice, stock, categoryId, specifications, productType, dynamicOptions } = req.body;
-    const mainImageFile = req.files?.find(f => f.fieldname === 'mainImage');
-    const detailedImageFiles = req.files?.filter(f => f.fieldname === 'detailedImages') || [];
+    const { 
+      name, 
+      description, 
+      price, 
+      originalPrice, 
+      stock, 
+      categoryId, 
+      specifications, 
+      productType, 
+      dynamicOptions,
+      mainImage,
+      detailedImages
+    } = req.body;
 
     let parsedSpecifications = [];
     if (specifications) {
@@ -403,6 +285,28 @@ app.post('/api/products', uploadFiles, async (req, res) => {
       }
     }
 
+    // معالجة الصورة الرئيسية
+    let optimizedMainImage = '';
+    if (mainImage && isValidBase64Image(mainImage)) {
+      optimizedMainImage = optimizeBase64Image(mainImage);
+      if (!optimizedMainImage) {
+        return res.status(400).json({ message: 'الصورة الرئيسية غير صحيحة' });
+      }
+    }
+
+    // معالجة الصور التفصيلية
+    let optimizedDetailedImages = [];
+    if (detailedImages && Array.isArray(detailedImages)) {
+      for (const image of detailedImages) {
+        if (isValidBase64Image(image)) {
+          const optimized = optimizeBase64Image(image);
+          if (optimized) {
+            optimizedDetailedImages.push(optimized);
+          }
+        }
+      }
+    }
+
     const product = new Product({
       name,
       description: description || '',
@@ -412,14 +316,14 @@ app.post('/api/products', uploadFiles, async (req, res) => {
       categoryId: parseInt(categoryId),
       productType: productType || 'وشاح وكاب',
       dynamicOptions: parsedDynamicOptions,
-      mainImage: mainImageFile ? `/images/${mainImageFile.filename}` : '',
-      detailedImages: detailedImageFiles.map(file => `/images/${file.filename}`),
+      mainImage: optimizedMainImage,
+      detailedImages: optimizedDetailedImages,
       sizeGuideImage: '',
       specifications: parsedSpecifications
     });
 
     await product.save();
-    console.log('Product created successfully:', product);
+    console.log('Product created successfully:', product.name);
     res.status(201).json(product);
   } catch (error) {
     console.error('Error in POST /api/products:', error);
@@ -427,11 +331,21 @@ app.post('/api/products', uploadFiles, async (req, res) => {
   }
 });
 
-app.put('/api/products/:id', uploadFiles, async (req, res) => {
+app.put('/api/products/:id', async (req, res) => {
   try {
-    const { name, description, price, originalPrice, stock, categoryId, specifications, productType, dynamicOptions } = req.body;
-    const mainImageFile = req.files?.find(f => f.fieldname === 'mainImage');
-    const detailedImageFiles = req.files?.filter(f => f.fieldname === 'detailedImages') || [];
+    const { 
+      name, 
+      description, 
+      price, 
+      originalPrice, 
+      stock, 
+      categoryId, 
+      specifications, 
+      productType, 
+      dynamicOptions,
+      mainImage,
+      detailedImages
+    } = req.body;
 
     let parsedSpecifications = [];
     if (specifications) {
@@ -468,12 +382,30 @@ app.put('/api/products/:id', uploadFiles, async (req, res) => {
       sizeGuideImage: ''
     };
 
-    if (mainImageFile) {
-      updateData.mainImage = `/images/${mainImageFile.filename}`;
+    // معالجة الصورة الرئيسية
+    if (mainImage) {
+      if (isValidBase64Image(mainImage)) {
+        const optimized = optimizeBase64Image(mainImage);
+        if (optimized) {
+          updateData.mainImage = optimized;
+        }
+      } else {
+        return res.status(400).json({ message: 'الصورة الرئيسية غير صحيحة' });
+      }
     }
 
-    if (detailedImageFiles.length > 0) {
-      updateData.detailedImages = detailedImageFiles.map(file => `/images/${file.filename}`);
+    // معالجة الصور التفصيلية
+    if (detailedImages && Array.isArray(detailedImages)) {
+      const optimizedDetailedImages = [];
+      for (const image of detailedImages) {
+        if (isValidBase64Image(image)) {
+          const optimized = optimizeBase64Image(image);
+          if (optimized) {
+            optimizedDetailedImages.push(optimized);
+          }
+        }
+      }
+      updateData.detailedImages = optimizedDetailedImages;
     }
 
     const product = await Product.findOneAndUpdate(
@@ -1937,20 +1869,24 @@ app.get('/api/user/:userId/wishlist/check/:productId', async (req, res) => {
 });
 
 // Upload attachment images
-app.post('/api/upload-attachments', uploadFiles, async (req, res) => {
+app.post('/api/upload-attachments', async (req, res) => {
   try {
-    if (!req.files || req.files.length === 0) {
-      return res.status(400).json({ message: 'No files uploaded' });
+    if (!req.body.images || !req.body.images.length) {
+      return res.status(400).json({ message: 'No images uploaded' });
     }
 
-    const imagePaths = req.files.map(file => `/images/${file.filename}`);
+    const optimizedImages = req.body.images.map(image => ({
+      ...image,
+      optimizedImage: optimizeBase64Image(image.base64Image)
+    }));
+
     res.json({ 
-      message: 'Files uploaded successfully',
-      imagePaths 
+      message: 'Images uploaded successfully',
+      images: optimizedImages
     });
   } catch (error) {
-    console.error('Error uploading attachments:', error);
-    res.status(500).json({ message: 'Failed to upload files' });
+    console.error('Error uploading images:', error);
+    res.status(500).json({ message: 'Failed to upload images' });
   }
 });
 
