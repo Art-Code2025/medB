@@ -33,18 +33,79 @@ const corsOptions = {
     'http://localhost:3000', // Common local dev port
     'https://medicinef.netlify.app',
     'http://medicinef.netlify.app',
-    'medicinef.netlify.app'     // Your new Netlify frontend URL
+    'medicinef.netlify.app',     // Your new Netlify frontend URL
+    // إضافة دعم للموبايل والتطبيقات
+    'https://medicinef.netlify.app',
+    'https://*.netlify.app',
+    'capacitor://localhost',
+    'ionic://localhost',
+    'http://localhost',
+    'https://localhost',
+    // دعم preview URLs من Netlify
+    /https:\/\/.*--medicinef\.netlify\.app$/,
+    /https:\/\/medicinef--.*\.netlify\.app$/
   ],
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  optionsSuccessStatus: 200
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH', 'HEAD'],
+  allowedHeaders: [
+    'Content-Type', 
+    'Authorization', 
+    'X-Requested-With',
+    'Accept',
+    'Origin',
+    'Cache-Control',
+    'Pragma',
+    'Access-Control-Request-Method',
+    'Access-Control-Request-Headers'
+  ],
+  exposedHeaders: [
+    'Content-Length',
+    'Content-Type',
+    'Access-Control-Allow-Origin'
+  ],
+  optionsSuccessStatus: 200,
+  preflightContinue: false,
+  maxAge: 86400 // 24 hours
 };
 
 // Middleware
 app.use(cors(corsOptions));
+
+// إضافة middleware خاص للموبايل
+app.use((req, res, next) => {
+  // إضافة headers إضافية للموبايل
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS,PATCH,HEAD');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Cache-Control, Pragma');
+  res.header('Access-Control-Expose-Headers', 'Content-Length, Content-Type');
+  res.header('X-Content-Type-Options', 'nosniff');
+  res.header('X-Frame-Options', 'DENY');
+  res.header('X-XSS-Protection', '1; mode=block');
+  
+  // معالجة preflight requests
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(200);
+  } else {
+    next();
+  }
+});
+
 app.use(express.json({ limit: '50mb' })); // زيادة الحد الأقصى لدعم base64 images
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// إضافة timeout middleware
+app.use((req, res, next) => {
+  // timeout أطول للموبايل
+  res.setTimeout(60000, () => {
+    console.log('Request timeout for:', req.url);
+    res.status(408).json({ 
+      message: 'Request timeout',
+      error: 'الطلب استغرق وقتاً أطول من المتوقع'
+    });
+  });
+  next();
+});
 
 // دالة للتحقق من صحة base64 image
 function isValidBase64Image(base64String) {
@@ -82,6 +143,83 @@ async function connectDB() {
     process.exit(1);
   }
 }
+
+// ======================
+// HEALTH CHECK & DIAGNOSTICS
+// ======================
+app.get('/api/health', async (req, res) => {
+  try {
+    const mongoStatus = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
+    const dbStats = await mongoose.connection.db.stats();
+    
+    // معلومات إضافية للتشخيص
+    const healthInfo = {
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      server: {
+        uptime: process.uptime(),
+        memory: process.memoryUsage(),
+        version: process.version,
+        platform: process.platform
+      },
+      database: {
+        status: mongoStatus,
+        name: dbStats.db,
+        collections: dbStats.collections,
+        dataSize: dbStats.dataSize,
+        indexSize: dbStats.indexSize
+      },
+      api: {
+        baseUrl: req.protocol + '://' + req.get('host'),
+        userAgent: req.get('User-Agent'),
+        origin: req.get('Origin'),
+        mobile: /Mobile|Android|iPhone|iPad/.test(req.get('User-Agent') || ''),
+        cors: req.get('Origin') ? 'enabled' : 'not-applicable'
+      },
+      counts: {
+        categories: await Category.countDocuments({ isActive: true }),
+        products: await Product.countDocuments({ isActive: true }),
+        customers: await Customer.countDocuments(),
+        orders: await Order.countDocuments(),
+        coupons: await Coupon.countDocuments({ isActive: true })
+      }
+    };
+    
+    res.json(healthInfo);
+  } catch (error) {
+    console.error('Health check error:', error);
+    res.status(500).json({ 
+      status: 'error',
+      message: 'Health check failed',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// API خاص للموبايل لاختبار الاتصال
+app.get('/api/mobile-test', async (req, res) => {
+  const userAgent = req.get('User-Agent') || '';
+  const isMobile = /Mobile|Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent);
+  
+  res.json({
+    success: true,
+    message: isMobile ? 'Mobile connection successful' : 'Desktop connection successful',
+    timestamp: new Date().toISOString(),
+    client: {
+      userAgent,
+      isMobile,
+      ip: req.ip || req.connection.remoteAddress,
+      origin: req.get('Origin'),
+      referer: req.get('Referer')
+    },
+    server: {
+      status: 'running',
+      cors: 'enabled',
+      mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
+    }
+  });
+});
 
 // ======================
 // CATEGORIES APIs
