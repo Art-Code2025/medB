@@ -5,6 +5,7 @@ import multer from 'multer';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { config, getMongoUri } from './config.js';
+import fs from 'fs';
 
 // Import Models
 import Coupon from './models/Coupon.js';
@@ -44,11 +45,18 @@ const corsOptions = {
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const dir = path.join(__dirname, 'public/images/');
+    // التأكد من وجود المجلد
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    console.log(`📁 [Upload] Saving file to: ${dir}`);
     cb(null, dir);
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
+    const filename = uniqueSuffix + path.extname(file.originalname);
+    console.log(`📸 [Upload] Generated filename: ${filename}`);
+    cb(null, filename);
   }
 });
 
@@ -60,6 +68,7 @@ const upload = multer({
     files: 20
   },
   fileFilter: (req, file, cb) => {
+    console.log(`🔍 [Upload] Checking file: ${file.originalname}, type: ${file.mimetype}`);
     if (file.mimetype.startsWith('image/')) {
       cb(null, true);
     } else {
@@ -68,8 +77,38 @@ const upload = multer({
   }
 });
 
-// Middleware للتعامل مع جميع أنواع الملفات
-const uploadFiles = upload.any();
+// Middleware للتعامل مع جميع أنواع الملفات مع تسجيل العمليات
+const uploadFiles = (req, res, next) => {
+  upload.any()(req, res, (err) => {
+    if (err) {
+      console.error('❌ [Upload] Error during file upload:', err);
+      return next(err);
+    }
+    
+    // تسجيل الملفات المرفوعة
+    if (req.files && req.files.length > 0) {
+      console.log(`✅ [Upload] Successfully uploaded ${req.files.length} files:`);
+      req.files.forEach(file => {
+        const filePath = path.join(file.destination, file.filename);
+        console.log(`  - ${file.originalname} → ${file.filename} (${file.size} bytes)`);
+        console.log(`  - Full path: ${filePath}`);
+        
+        // التحقق من حفظ الملف
+        fs.access(filePath, fs.constants.F_OK, (err) => {
+          if (err) {
+            console.error(`❌ [Upload] File not found after upload: ${filePath}`);
+          } else {
+            console.log(`✅ [Upload] File confirmed saved: ${filePath}`);
+          }
+        });
+      });
+    } else {
+      console.log('ℹ️ [Upload] No files received');
+    }
+    
+    next();
+  });
+};
 
 // معالج أخطاء Multer
 const handleMulterError = (err, req, res, next) => {
